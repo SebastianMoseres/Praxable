@@ -21,24 +21,108 @@ def initialize_database():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             date TEXT NOT NULL,
             task TEXT NOT NULL,
-            
-            -- NEW COLUMNS --
             task_type TEXT,
+            
+            aligned_value TEXT,      -- NEW: Which core value does this serve?
+            
             dread_level INTEGER,
             location TEXT,
-            
             planned_time TEXT,
             actual_time TEXT,
             did_it INTEGER NOT NULL,
             mood_before INTEGER,
             sleep_quality INTEGER,
-            energy_level INTEGER
+            energy_level INTEGER,
+
+            mood_after INTEGER,        -- NEW: How did you feel after?
+            fulfillment_score INTEGER  -- NEW: Was it energizing or draining?
+        )
+    ''')
+
+    # --- THE NEW 'values' TABLE ---
+    # This table will store the user's core life values
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS core_values (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            value_name TEXT NOT NULL UNIQUE
         )
     ''')
     
     conn.commit()
     conn.close()
-    print("Database initialized and table 'tasks' is ready.")
+    print("Database initialized with tables for 'tasks' and 'values'.")
+
+
+# ... (after initialize_database) ...
+
+def get_values():
+    """Fetches all user-defined values from the 'values' table."""
+    conn = sqlite3.connect(config.DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT value_name FROM core_values ORDER BY id")
+    values = [row[0] for row in cursor.fetchall()]
+    conn.close()
+    return values
+
+def add_value(value_name):
+    """Adds a new core value to the 'values' table."""
+    conn = sqlite3.connect(config.DB_PATH)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("INSERT INTO core_values (value_name) VALUES (?)", (value_name,))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        print(f"Value '{value_name}' already exists.")
+    finally:
+        conn.close()
+
+def delete_value(value_name):
+    """Deletes a core value from the 'values' table."""
+    conn = sqlite3.connect(config.DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM core_values WHERE value_name = ?", (value_name,))
+    conn.commit()
+    conn.close()
+
+# ... (the rest of your functions like log_task, etc.) ...
+
+# def log_task(task_details):
+#     """Logs a new task to the SQLite database.
+    
+#     Args:
+#         task_details (dict): A dictionary with keys matching the COLUMNS config.
+#     """
+#     conn = sqlite3.connect(config.DB_PATH)
+#     cursor = conn.cursor()
+    
+#     # Use a parameterized query to safely insert data
+#     # The '?' placeholders prevent SQL injection attacks
+#     cursor.execute('''
+#         INSERT INTO tasks (
+#             date, task, task_type, dread_level, location, 
+#             planned_time, actual_time, did_it, 
+#             mood_before, sleep_quality, energy_level
+#         )
+#         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+#     ''', (
+#         task_details['date'],
+#         task_details['task'],
+#         # NEW VALUES --
+#         task_details['task_type'],
+#         task_details['dread_level'],
+#         task_details['location'],
+        
+#         task_details['planned_time'],
+#         task_details['actual_time'],
+#         task_details['did_it'],
+#         task_details['mood_before'],
+#         task_details['sleep_quality'],
+#         task_details['energy_level']
+#     ))
+    
+#     conn.commit()
+#     conn.close()
+#     print(f"Logged task to database: {task_details.get('task')}")
 
 def log_task(task_details):
     """Logs a new task to the SQLite database.
@@ -48,35 +132,25 @@ def log_task(task_details):
     """
     conn = sqlite3.connect(config.DB_PATH)
     cursor = conn.cursor()
-    
-    # Use a parameterized query to safely insert data
-    # The '?' placeholders prevent SQL injection attacks
     cursor.execute('''
         INSERT INTO tasks (
-            date, task, task_type, dread_level, location, 
+            date, task, task_type, value_aligned, dread_level, location, 
             planned_time, actual_time, did_it, 
             mood_before, sleep_quality, energy_level
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
-        task_details['date'],
-        task_details['task'],
-        # NEW VALUES --
-        task_details['task_type'],
-        task_details['dread_level'],
-        task_details['location'],
-        
-        task_details['planned_time'],
-        task_details['actual_time'],
-        task_details['did_it'],
-        task_details['mood_before'],
-        task_details['sleep_quality'],
-        task_details['energy_level']
+        task_details['date'], task_details['task'], task_details['task_type'],
+        task_details['aligned_value'], # New field
+        task_details['dread_level'], task_details['location'],
+        task_details['planned_time'], task_details['actual_time'],
+        task_details['did_it'], task_details['mood_before'],
+        task_details['sleep_quality'], task_details['energy_level']
     ))
-    
     conn.commit()
     conn.close()
     print(f"Logged task to database: {task_details.get('task')}")
+
 
 def get_all_tasks():
     """Fetches all tasks from the database and returns them as a Pandas DataFrame."""
@@ -92,21 +166,16 @@ def get_all_tasks():
     return df
 
 
-def update_task_as_done(task_id):
-    """Updates a task's 'did_it' status to 1 and records the actual_time."""
+def update_task_with_feedback(task_id, mood_after, fulfillment_score):
+    """Updates a task as done and records the post-task feedback."""
     conn = sqlite3.connect(config.DB_PATH)
     cursor = conn.cursor()
-    
-    # Get the current time in HH:MM format
     completion_time = datetime.now().strftime("%H:%M")
-    
-    # SQL UPDATE command to change 'did_it' and 'actual_time' for a specific task ID
     cursor.execute("""
         UPDATE tasks 
-        SET did_it = 1, actual_time = ? 
+        SET did_it = 1, actual_time = ?, mood_after = ?, fulfillment_score = ?
         WHERE id = ?
-    """, (completion_time, task_id))
-    
+    """, (completion_time, mood_after, fulfillment_score, task_id))
     conn.commit()
     conn.close()
     print(f"Marked task ID {task_id} as done at {completion_time}.")
