@@ -27,3 +27,8 @@ Thumbs.db
 
 # Ignore Streamlit secrets
 .streamlit/
+
+
+# Google Calendar Secrets
+backend/credentials.json
+backend/token.json
