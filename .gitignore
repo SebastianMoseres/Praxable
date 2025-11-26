@@ -24,3 +24,6 @@ __pycache__/
 # These are hidden files created by macOS and Windows.
 .DS_Store
 Thumbs.db
+
+# Ignore Streamlit secrets
+.streamlit/
