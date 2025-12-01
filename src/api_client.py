@@ -1,5 +1,6 @@
 import requests
 import streamlit as st
+import json
 
 # The base URL of our running FastAPI backend.
 # This is the address of our "kitchen".
@@ -52,6 +53,26 @@ def generate_plan_from_text(user_input: str, core_values: list):
             "core_values": core_values
         }
         response = requests.post(f"{BASE_URL}/planner/generate", json=payload)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        st.error(f"Error connecting to the AI planner: {e}")
+        return None
+    
+def generate_plan_with_audio(user_input: str, core_values: list, audio_bytes=None):
+    """Sends a POST request to the /planner/generate_with_audio endpoint."""
+    try:
+        # Prepare data for multipart/form-data
+        data = {
+            "user_input": user_input,
+            "core_values": json.dumps(core_values) # Convert list to JSON string
+        }
+        
+        files = {}
+        if audio_bytes:
+            files["audio_file"] = ("audio.wav", audio_bytes, "audio/wav")
+            
+        response = requests.post(f"{BASE_URL}/planner/generate_with_audio", data=data, files=files)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
