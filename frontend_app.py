@@ -2,9 +2,15 @@ import streamlit as st
 from datetime import datetime
 import pandas as pd
 
+st.set_page_config(
+    page_title="Praxable: The Alignment Engine",
+    layout="wide"
+)
+
 # --- Internal Modules ---
 # We ONLY import the api_client. The frontend never touches the data_manager.
 from src import api_client
+from streamlit_calendar import calendar
 
 st.markdown("""
 <style>
