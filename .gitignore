@@ -32,3 +32,7 @@ Thumbs.db
 # Google Calendar Secrets
 backend/credentials.json
 backend/token.json
+
+.env
+backend/.env
+.streamlit/secrets.toml
