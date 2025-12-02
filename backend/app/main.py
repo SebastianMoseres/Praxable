@@ -181,6 +181,44 @@ async def generate_plan(request: PlannerRequest):
     
     return plan
 
+from fastapi import UploadFile, File, Form
+
+@app.post("/planner/generate_with_audio", response_model=PlannerResponse)
+async def generate_plan_with_audio(
+    audio_file: UploadFile = File(None),
+    user_input: str = Form(""),
+    core_values: str = Form(...) # Expecting a JSON string of values
+):
+    """
+    Generates a plan from audio and/or text input.
+    """
+    # Parse core_values from JSON string
+    try:
+        values_list = json.loads(core_values)
+    except:
+        values_list = []
+
+    # Read audio file bytes if present
+    audio_bytes = None
+    if audio_file:
+        audio_bytes = await audio_file.read()
+
+    # Get free slots for context
+    free_slots = scheduler.get_free_slots()
+
+    # Call AI
+    plan = llm_parser.get_structured_plan(
+        user_input=user_input,
+        core_values=values_list,
+        free_slots=free_slots,
+        audio_file=audio_bytes
+    )
+    
+    if not plan or "tasks" not in plan:
+        raise HTTPException(status_code=500, detail="AI failed to generate a valid plan.")
+    
+    return plan
+
 # ... (at the end of the file)
 import pandas as pd # Add pandas to your imports at the top of the file
 
@@ -198,6 +236,21 @@ async def get_all_tasks_endpoint():
     # json.loads() automatically converts null to None.
     # This guarantees Pydantic gets exactly what it wants.
     return json.loads(tasks_df.to_json(orient="records"))
+
+@app.post("/tasks", response_model=TaskResponse, status_code=201)
+async def create_task_endpoint(task: TaskCreate):
+    """Creates a new task in the database."""
+    task_dict = task.model_dump()
+    
+    # Log to database (data_manager.log_task expects a dict)
+    data_manager.log_task(task_dict)
+    
+    # Return the created task with an ID
+    import time
+    task_dict['id'] = int(time.time() * 1000)
+    task_dict['mood_after'] = None
+    task_dict['fulfillment_score'] = None
+    return task_dict
 
 @app.post("/tasks/{task_id}/feedback", response_model=TaskResponse, status_code=200)
 async def save_task_feedback_endpoint(task_id: int, feedback: TaskFeedback):

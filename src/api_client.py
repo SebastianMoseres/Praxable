@@ -142,3 +142,28 @@ def get_predicted_fulfillment(task_type, aligned_value, energy_level, mood_befor
         return None
     except Exception:
         return None
+
+def get_calendar_events():
+    """Fetches today's calendar events from the backend."""
+    try:
+        response = requests.get(f"{BASE_URL}/calendar/today")
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        st.error(f"Error fetching calendar events: {e}")
+        return []
+
+def add_calendar_event(summary, start_time, end_time):
+    """Sends a request to add an event to the calendar."""
+    try:
+        payload = {
+            "summary": summary,
+            "start": start_time,
+            "end": end_time
+        }
+        response = requests.post(f"{BASE_URL}/calendar/events", json=payload)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        st.error(f"Error adding calendar event: {e}")
+        return None

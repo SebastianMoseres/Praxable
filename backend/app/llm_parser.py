@@ -6,69 +6,73 @@ from dotenv import load_dotenv
 # Load environment variables from the .env file in the 'backend' directory
 load_dotenv()
 
-def get_structured_plan(user_input, core_values):
+def get_structured_plan(user_input, core_values, free_slots, audio_file=None):
     """
-    Sends user input and core values to the Gemini model and gets a structured plan back.
+    Sends user input, core values, AND free time slots to the AI.
     """
-    # --- 1. CONFIGURE THE API ---
     try:
-        # Load the key from environment variables
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
             raise ValueError("GEMINI_API_KEY not found in .env file.")
         genai.configure(api_key=api_key)
     except Exception as e:
         print(f"Error configuring API: {e}")
-        return None # Return None on failure
+        return None
 
-    # --- 2. DEFINE THE MASTER PROMPT ---
+    # Format free slots into a readable string for the AI
+    slots_text = "\n".join([
+        f"- {s['start']} to {s['end']} ({s['duration_minutes']} mins)" 
+        for s in free_slots
+    ])
+
     master_prompt = f"""
-    You are an expert assistant for the 'Praxable' app, designed to help users plan their day in alignment with their core values.
-    Your task is to take the user's raw, natural language text about their plans and convert it into a structured JSON object.
+    You are an expert planning assistant for the 'Praxable' app.
+    
+    CONTEXT:
+    1. User's Core Values: {', '.join(core_values)}
+    2. User's Input (Intentions): "{user_input}"
+    3. **AVAILABLE FREE TIME SLOTS (Do not schedule outside these):**
+    {slots_text}
 
-    The user's defined core values are: {', '.join(core_values)}.
+    INSTRUCTIONS:
+    Analyze the user's input (text or audio) to identify tasks.
+    For each task, assign it to one of the Available Free Time Slots.
+    - If a task takes 2 hours, find a slot that is at least 120 mins.
+    - If the user specifies a time (e.g., "at 5pm"), try to fit it in the corresponding slot.
+    - If no time is specified, pick the most logical slot based on the task type.
+    - If audio is provided, prioritize the audio content.
 
-    Analyze the user's input below. For each distinct activity you identify, extract the following information:
-    - "task_name": A clear, concise name for the activity.
-    - "task_type": Categorize it as one of: 'Exercise', 'Deep Work', 'Shallow Work', 'Chore', 'Creative', 'Learning', 'Connection', or 'Relaxation'.
-    - "time_preference": Extract any mention of time, like 'morning', 'afternoon', 'evening', or specific times. If none, use "any".
-    - "aligned_value": Match the task to the MOST relevant of the user's core values provided above.
-
-    User Input:
-    "{user_input}"
-
-    Your response MUST be a JSON object containing a single key "tasks", which is a list of the extracted task objects.
-    Do not include any other text, explanations, or markdown formatting in your response. Just the JSON.
-
-    Example Output Format:
+    OUTPUT FORMAT (JSON ONLY):
     {{
       "tasks": [
         {{
-          "task_name": "Work on new song",
-          "task_type": "Creative",
-          "time_preference": "morning",
-          "aligned_value": "Creativity"
-        }},
-        {{
-          "task_name": "Go to the gym",
-          "task_type": "Exercise",
-          "time_preference": "afternoon",
-          "aligned_value": "Health"
+          "task_name": "String",
+          "task_type": "Category",
+          "aligned_value": "Value Name",
+          "time_preference": "HH:MM - HH:MM" (The specific time you chose from the slots)
         }}
       ]
     }}
+    
+    Do not include markdown formatting. Return raw JSON.
     """
 
-    # --- 3. CALL THE GEMINI API ---
     try:
-        model = genai.GenerativeModel('gemini-2.5-flash') # Or 'gemini-pro'
-        response = model.generate_content(master_prompt)
+        # Use Gemini 2.0 Flash which supports multimodal input
+        model = genai.GenerativeModel('gemini-2.0-flash')
         
-        # --- 4. PARSE THE RESPONSE ---
+        content = [master_prompt]
+        if audio_file:
+            # audio_file is expected to be bytes
+            blob = {'mime_type': 'audio/wav', 'data': audio_file}
+            content.append(blob)
+
+        response = model.generate_content(content)
+        
         json_response_text = response.text.strip().replace('```json', '').replace('```', '')
         structured_data = json.loads(json_response_text)
         return structured_data
 
     except Exception as e:
-        print(f"An error occurred while communicating with the Gemini API: {e}")
+        print(f"AI Error: {e}")
         return None

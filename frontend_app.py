@@ -103,7 +103,7 @@ st.set_page_config(
 st.sidebar.title("Navigation")
 page = st.sidebar.radio(
     "Go to",
-    ["Plan Your Day with AI", "Log & Review", "Dashboard", "Define Your Values"]
+    ["Plan Your Day with AI", "Calendar", "Log & Review", "Dashboard", "Define Your Values"]
 )
 
 # =====================================================================================
@@ -132,6 +132,10 @@ if page == "Plan Your Day with AI":
                 "and should call Sarah this evening."
             )
         )
+        
+        st.write("OR Record your plan:")
+        audio_value = st.audio_input("Record")
+        
         # NEW: Capture state for prediction
         c1, c2 = st.columns(2)
         current_energy = c1.slider("Current Energy", 1, 10, 6)
@@ -139,9 +143,13 @@ if page == "Plan Your Day with AI":
         submit_button = st.form_submit_button("Generate Plan")
 
     # --- AI Processing ---
-    if submit_button and user_input:
+    if submit_button and (user_input or audio_value):
         with st.spinner("AI is thinking..."):
-            proposed_plan = api_client.generate_plan_from_text(user_input, current_values)
+            proposed_plan = api_client.generate_plan_with_audio(
+                user_input=user_input if user_input else "",
+                core_values=current_values,
+                audio_bytes=audio_value
+            )
         
         if proposed_plan and "tasks" in proposed_plan:
             st.success("Here’s the AI-generated plan:")
@@ -176,12 +184,12 @@ if page == "Plan Your Day with AI":
         else:
             st.error("The AI couldn’t generate a plan. Try rephrasing your input.")
 
-    # --- Save To Log ---
+    # --- Save To Log & Calendar ---
     if "proposed_tasks" in st.session_state:
-        if st.button("Looks good! Add to my log"):
-            with st.spinner("Saving tasks..."):
+        if st.button("Approve & Add to Calendar"):
+            with st.spinner("Saving tasks and updating calendar..."):
                 for task in st.session_state.proposed_tasks:
-                    # WE USE API_CLIENT HERE NOW
+                    # 1. Log to DB
                     api_client.log_task({
                         "date": datetime.now().strftime("%Y-%m-%d"),
                         "task": task.get("task_name"),
@@ -196,11 +204,111 @@ if page == "Plan Your Day with AI":
                         "sleep_quality": 7,
                         "energy_level": 6,
                     })
+                    
+                    # 2. Add to Google Calendar
+                    # Parse the time preference - AI may return ranges like "14:00 - 15:00"
+                    try:
+                        time_pref = task.get("time_preference", "12:00")
+                        
+                        # Check if it's a time range (e.g., "09:00 - 10:00")
+                        if " - " in time_pref:
+                            start_str, end_str = time_pref.split(" - ")
+                            start_hour = int(start_str.split(":")[0])
+                            start_minute = int(start_str.split(":")[1])
+                            end_hour = int(end_str.split(":")[0])
+                            end_minute = int(end_str.split(":")[1])
+                        # Check if it's just a time (e.g., "14:00")
+                        elif ":" in time_pref:
+                            start_hour = int(time_pref.split(":")[0])
+                            start_minute = int(time_pref.split(":")[1])
+                            end_hour = start_hour + 1  # Default 1 hour duration
+                            end_minute = start_minute
+                        # Otherwise use defaults
+                        else:
+                            start_hour = 12
+                            start_minute = 0
+                            end_hour = 13
+                            end_minute = 0
+                            
+                        now = datetime.now()
+                        start_dt = now.replace(hour=start_hour, minute=start_minute, second=0, microsecond=0)
+                        end_dt = now.replace(hour=end_hour, minute=end_minute, second=0, microsecond=0)
+                        
+                        api_client.add_calendar_event(
+                            summary=task.get("task_name"),
+                            start_time=start_dt.isoformat(),
+                            end_time=end_dt.isoformat()
+                        )
+                    except Exception as e:
+                        st.error(f"Could not schedule '{task.get('task_name')}' on calendar: {e}")
 
-            st.success("Your plan has been saved! Check the Log & Review page.")
+            st.success("Your plan has been saved and added to your calendar! Check the Calendar page.")
             del st.session_state.proposed_tasks
             st.rerun()
 
+
+
+
+# =====================================================================================
+# PAGE 1.5 — CALENDAR
+# =====================================================================================
+elif page == "Calendar":
+    st.title("📅 Your Schedule")
+    
+    # 1. Fetch Events
+    events = api_client.get_calendar_events()
+    
+    # 2. Prepare Calendar Events
+    calendar_events = []
+    for event in events:
+        calendar_events.append({
+            "title": event.get("summary", "Busy"),
+            "start": event.get("start"),
+            "end": event.get("end"),
+        })
+        
+    # 3. Display Calendar
+    calendar_options = {
+        "headerToolbar": {
+            "left": "today prev,next",
+            "center": "title",
+            "right": "timeGridDay,timeGridWeek"
+        },
+        "initialView": "timeGridDay",
+        "slotMinTime": "06:00:00",
+        "slotMaxTime": "22:00:00",
+    }
+    
+    st.markdown("### Today's View")
+    calendar(events=calendar_events, options=calendar_options, key="my_calendar")
+    
+    st.divider()
+    
+    # 4. Add Manual Event
+    st.subheader("Add Event Manually")
+    with st.form("manual_event_form"):
+        c1, c2 = st.columns(2)
+        event_title = c1.text_input("Event Title")
+        event_date = c2.date_input("Date", value=datetime.now())
+        
+        c3, c4 = st.columns(2)
+        start_time = c3.time_input("Start Time", value=datetime.now().time())
+        end_time = c4.time_input("End Time", value=(datetime.now() + pd.Timedelta(hours=1)).time())
+        
+        submitted = st.form_submit_button("Add to Calendar")
+        
+        if submitted and event_title:
+            # Combine date and time
+            start_dt = datetime.combine(event_date, start_time)
+            end_dt = datetime.combine(event_date, end_time)
+            
+            api_client.add_calendar_event(
+                summary=event_title,
+                start_time=start_dt.isoformat(),
+                end_time=end_dt.isoformat()
+            )
+            st.success(f"Added '{event_title}' to calendar!")
+            st.rerun()
 
 # =====================================================================================
 # PAGE 2 — LOG & REVIEW
