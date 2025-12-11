@@ -9,8 +9,14 @@ import {
     ActivityIndicator,
     Alert,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Audio } from 'expo-av';
+import { GlassCard } from '../components/GlassCard';
+import { GradientButton } from '../components/GradientButton';
+import { TaskCard } from '../components/TaskCard';
 import { api, Task } from '../services/api';
+import { notificationService } from '../services/notifications';
+import { theme } from '../theme';
 
 export default function PlannerScreen() {
     const [userInput, setUserInput] = useState('');
@@ -121,9 +127,15 @@ export default function PlannerScreen() {
                     startTime.toISOString(),
                     endTime.toISOString()
                 );
+
+                // Schedule notification
+                await notificationService.scheduleTaskReminder(
+                    task.task_name,
+                    task.time_preference
+                );
             }
 
-            Alert.alert('Success', 'Tasks added to calendar!');
+            Alert.alert('Success', 'Tasks added to calendar with reminders!');
             setTasks([]);
             setUserInput('');
             setAudioUri(null);
@@ -134,101 +146,211 @@ export default function PlannerScreen() {
     };
 
     return (
-        <ScrollView style={styles.container}>
-            <Text style={styles.title}>Plan Your Day with AI</Text>
+        <LinearGradient
+            colors={[theme.colors.background, theme.colors.backgroundSecondary]}
+            style={styles.container}
+        >
+            <ScrollView contentContainerStyle={styles.scrollContent}>
+                <Text style={styles.title}>✨ AI Planner</Text>
+                <Text style={styles.subtitle}>Plan your day aligned with your values</Text>
 
-            <TextInput
-                style={styles.textInput}
-                placeholder="What's on your mind for today?"
-                multiline={true}
-                value={userInput}
-                onChangeText={setUserInput}
-            />
-
-            <TouchableOpacity
-                style={[styles.recordButton, isRecording && styles.recordingButton]}
-                onPress={isRecording ? stopRecording : startRecording}
-            >
-                <Text style={styles.recordButtonText}>
-                    {isRecording ? '🔴 Stop Recording' : '🎤 Record Your Plan'}
-                </Text>
-            </TouchableOpacity>
-
-            {audioUri && (
-                <Text style={styles.audioConfirm}>✓ Audio recorded</Text>
-            )}
-
-            <View style={styles.sliderRow}>
-                <View style={styles.sliderContainer}>
-                    <Text>Energy: {energy}</Text>
+                <GlassCard style={styles.inputCard}>
+                    <Text style={styles.label}>What's on your mind?</Text>
                     <TextInput
-                        style={styles.sliderInput}
-                        keyboardType="numeric"
-                        value={String(energy)}
-                        onChangeText={(text) => setEnergy(Number(text) || 6)}
+                        style={styles.textInput}
+                        placeholder="Describe your goals for today..."
+                        placeholderTextColor={theme.colors.textMuted}
+                        multiline={true}
+                        value={userInput}
+                        onChangeText={setUserInput}
                     />
-                </View>
-                <View style={styles.sliderContainer}>
-                    <Text>Mood: {mood}</Text>
-                    <TextInput
-                        style={styles.sliderInput}
-                        keyboardType="numeric"
-                        value={String(mood)}
-                        onChangeText={(text) => setMood(Number(text) || 5)}
-                    />
-                </View>
-            </View>
+                </GlassCard>
 
-            <TouchableOpacity
-                style={styles.generateButton}
-                onPress={generatePlan}
-                disabled={isLoading}
-            >
-                {isLoading ? (
-                    <ActivityIndicator color="#fff" />
-                ) : (
-                    <Text style={styles.generateButtonText}>Generate Plan</Text>
+                <GradientButton
+                    title={isRecording ? '🔴 Stop Recording' : '🎤 Record Your Plan'}
+                    onPress={isRecording ? stopRecording : startRecording}
+                    gradient={isRecording ? theme.colors.gradientSecondary : theme.colors.gradientInfo}
+                    style={styles.recordButton}
+                />
+
+                {audioUri && (
+                    <Text style={styles.audioConfirm}>✓ Audio recorded successfully</Text>
                 )}
-            </TouchableOpacity>
 
-            {tasks.length > 0 && (
-                <View style={styles.tasksContainer}>
-                    <Text style={styles.tasksTitle}>AI-Generated Tasks:</Text>
-                    {tasks.map((task, index) => (
-                        <View key={index} style={styles.taskCard}>
-                            <Text style={styles.taskName}>{task.task_name}</Text>
-                            <Text style={styles.taskDetail}>Type: {task.task_type}</Text>
-                            <Text style={styles.taskDetail}>Time: {task.time_preference}</Text>
-                            <Text style={styles.taskDetail}>Value: {task.aligned_value}</Text>
+                <GlassCard style={styles.stateCard}>
+                    <Text style={styles.sectionTitle}>Current State</Text>
+                    <View style={styles.sliderRow}>
+                        <View style={styles.sliderContainer}>
+                            <Text style={styles.sliderLabel}>⚡ Energy</Text>
+                            <View style={styles.scaleButtons}>
+                                {[...Array(10)].map((_, i) => (
+                                    <TouchableOpacity
+                                        key={i}
+                                        style={[styles.scaleButton, energy === i + 1 && styles.scaleButtonActive]}
+                                        onPress={() => setEnergy(i + 1)}
+                                    >
+                                        <Text style={[styles.scaleButtonText, energy === i + 1 && styles.scaleButtonTextActive]}>
+                                            {i + 1}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
                         </View>
-                    ))}
-                    <TouchableOpacity style={styles.approveButton} onPress={approveTasks}>
-                        <Text style={styles.approveButtonText}>Approve & Add to Calendar</Text>
-                    </TouchableOpacity>
-                </View>
-            )}
-        </ScrollView>
+
+                        <View style={styles.sliderContainer}>
+                            <Text style={styles.sliderLabel}>😊 Mood</Text>
+                            <View style={styles.scaleButtons}>
+                                {[...Array(10)].map((_, i) => (
+                                    <TouchableOpacity
+                                        key={i}
+                                        style={[styles.scaleButton, mood === i + 1 && styles.scaleButtonActive]}
+                                        onPress={() => setMood(i + 1)}
+                                    >
+                                        <Text style={[styles.scaleButtonText, mood === i + 1 && styles.scaleButtonTextActive]}>
+                                            {i + 1}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+                        </View>
+                    </View>
+                </GlassCard>
+
+                <GradientButton
+                    title="Generate Plan"
+                    onPress={generatePlan}
+                    loading={isLoading}
+                    gradient={theme.colors.gradientSuccess}
+                    style={styles.generateButton}
+                />
+
+                {tasks.length > 0 && (
+                    <View style={styles.tasksContainer}>
+                        <Text style={styles.tasksTitle}>AI-Generated Tasks</Text>
+                        {tasks.map((task, index) => (
+                            <TaskCard key={index} task={task} showCheckbox={false} />
+                        ))}
+                        <GradientButton
+                            title="Approve & Add to Calendar"
+                            onPress={approveTasks}
+                            gradient={theme.colors.gradientWarning}
+                            style={styles.approveButton}
+                        />
+                    </View>
+                )}
+            </ScrollView>
+        </LinearGradient>
     );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, padding: 20, backgroundColor: '#f5f5f5' },
-    title: { fontSize: 24, fontWeight: 'bold', marginBottom: 20, marginTop: 40 },
-    textInput: { backgroundColor: '#fff', padding: 15, borderRadius: 10, fontSize: 16, minHeight: 120, marginBottom: 15 },
-    recordButton: { backgroundColor: '#007AFF', padding: 15, borderRadius: 10, alignItems: 'center', marginBottom: 10 },
-    recordingButton: { backgroundColor: '#FF3B30' },
-    recordButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-    audioConfirm: { color: '#34C759', textAlign: 'center', marginBottom: 15 },
-    sliderRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
-    sliderContainer: { flex: 1, marginHorizontal: 5 },
-    sliderInput: { backgroundColor: '#fff', padding: 10, borderRadius: 5, marginTop: 5 },
-    generateButton: { backgroundColor: '#34C759', padding: 18, borderRadius: 10, alignItems: 'center', marginBottom: 20 },
-    generateButtonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-    tasksContainer: { marginTop: 10 },
-    tasksTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 15 },
-    taskCard: { backgroundColor: '#fff', padding: 15, borderRadius: 10, marginBottom: 10 },
-    taskName: { fontSize: 18, fontWeight: '600', marginBottom: 5 },
-    taskDetail: { fontSize: 14, color: '#666', marginTop: 3 },
-    approveButton: { backgroundColor: '#FF9500', padding: 18, borderRadius: 10, alignItems: 'center', marginTop: 15 },
-    approveButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+    container: { flex: 1 },
+    scrollContent: {
+        padding: theme.spacing.lg,
+        paddingTop: 60,
+        paddingBottom: 40,
+    },
+    title: {
+        fontSize: theme.typography.sizes['3xl'],
+        fontWeight: '700',
+        color: theme.colors.text,
+        marginBottom: theme.spacing.xs,
+    },
+    subtitle: {
+        fontSize: theme.typography.sizes.base,
+        color: theme.colors.textSecondary,
+        marginBottom: theme.spacing.lg,
+    },
+    inputCard: {
+        marginBottom: theme.spacing.md,
+        padding: theme.spacing.lg,
+    },
+    label: {
+        fontSize: theme.typography.sizes.base,
+        color: theme.colors.text,
+        fontWeight: '600',
+        marginBottom: theme.spacing.sm,
+    },
+    textInput: {
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        borderRadius: theme.borderRadius.md,
+        padding: theme.spacing.md,
+        fontSize: theme.typography.sizes.base,
+        color: theme.colors.text,
+        minHeight: 120,
+        textAlignVertical: 'top',
+    },
+    recordButton: {
+        marginBottom: theme.spacing.md,
+    },
+    audioConfirm: {
+        color: theme.colors.success,
+        textAlign: 'center',
+        marginBottom: theme.spacing.md,
+        fontSize: theme.typography.sizes.sm,
+    },
+    stateCard: {
+        marginBottom: theme.spacing.md,
+        padding: theme.spacing.lg,
+    },
+    sectionTitle: {
+        fontSize: theme.typography.sizes.lg,
+        fontWeight: '600',
+        color: theme.colors.text,
+        marginBottom: theme.spacing.md,
+    },
+    sliderRow: {
+        gap: theme.spacing.lg,
+    },
+    sliderContainer: {
+        marginBottom: theme.spacing.md,
+    },
+    sliderLabel: {
+        fontSize: theme.typography.sizes.sm,
+        color: theme.colors.text,
+        fontWeight: '600',
+        marginBottom: theme.spacing.sm,
+    },
+    scaleButtons: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: theme.spacing.xs,
+    },
+    scaleButton: {
+        width: 32,
+        height: 32,
+        borderRadius: theme.borderRadius.sm,
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.15)',
+    },
+    scaleButtonActive: {
+        backgroundColor: theme.colors.primary,
+        borderColor: theme.colors.primary,
+    },
+    scaleButtonText: {
+        color: theme.colors.textSecondary,
+        fontSize: theme.typography.sizes.xs,
+        fontWeight: '600',
+    },
+    scaleButtonTextActive: {
+        color: theme.colors.text,
+    },
+    generateButton: {
+        marginBottom: theme.spacing.lg,
+    },
+    tasksContainer: {
+        marginTop: theme.spacing.md,
+    },
+    tasksTitle: {
+        fontSize: theme.typography.sizes.xl,
+        fontWeight: '700',
+        color: theme.colors.text,
+        marginBottom: theme.spacing.md,
+    },
+    approveButton: {
+        marginTop: theme.spacing.md,
+    },
 });

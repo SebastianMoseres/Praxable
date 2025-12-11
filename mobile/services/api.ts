@@ -3,7 +3,7 @@ import axios from 'axios';
 
 // Use your computer's local IP so phone can connect
 // Change this to your deployed backend URL in production
-const API_BASE = 'http://192.168.0.145:8000';
+const API_BASE = 'http://192.168.1.6:8000';
 
 // Types
 export interface CoreValue {
@@ -26,6 +26,29 @@ export interface CalendarEvent {
     summary: string;
     start: string;
     end: string;
+}
+
+export interface FreeSlot {
+    start: string;
+    end: string;
+    duration_minutes: number;
+}
+
+export interface Activity {
+    id: number;
+    name: string;
+    duration_minutes: number;
+    aligned_values: string[];
+    description: string;
+    category: string;
+    emoji: string;
+}
+
+export interface Recommendation extends Activity {
+    matching_values: string[];
+    match_score: number;
+    suggested_slot: FreeSlot;
+    all_available_slots: FreeSlot[];
 }
 
 // API client
@@ -113,5 +136,51 @@ export const api = {
             mood_before: moodBefore,
         });
         return response.data.predicted_fulfillment;
+    },
+
+    // Task Management
+    getAllTasks: async (): Promise<any[]> => {
+        const response = await axios.get(`${API_BASE}/tasks`);
+        return response.data;
+    },
+
+    completeTask: async (
+        taskId: number,
+        moodAfter: number,
+        fulfillmentScore: number
+    ): Promise<void> => {
+        await axios.post(`${API_BASE}/tasks/${taskId}/feedback`, {
+            mood_after: moodAfter,
+            fulfillment_score: fulfillmentScore,
+        });
+    },
+
+    // Analytics
+    getAnalytics: async (): Promise<any> => {
+        const response = await axios.get(`${API_BASE}/analytics/alignment`);
+        return response.data;
+    },
+
+    // Free Time Slots
+    getFreeSlots: async (): Promise<FreeSlot[]> => {
+        const response = await axios.get(`${API_BASE}/scheduler/free`);
+        return response.data;
+    },
+
+    // Activity Recommendations
+    getActivities: async (): Promise<Activity[]> => {
+        const response = await axios.get(`${API_BASE}/recommendations/activities`);
+        return response.data;
+    },
+
+    getRecommendations: async (
+        valueNames: string[],
+        minDuration?: number
+    ): Promise<Recommendation[]> => {
+        const response = await axios.post(`${API_BASE}/recommendations/suggest`, {
+            value_names: valueNames,
+            min_duration: minDuration || 0,
+        });
+        return response.data;
     },
 };

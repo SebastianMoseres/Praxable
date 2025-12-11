@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List
 import pandas as pd
@@ -14,6 +15,7 @@ from . import llm_parser
 from .predictor import predictor
 from . import calendar_service
 from . import scheduler
+from . import recommendations
 
 
 # --- FastAPI App Initialization ---
@@ -21,6 +23,22 @@ app = FastAPI(
     title="Praxable API",
     description="The backend for the Praxable Alignment Engine.",
     version="0.1.0"
+)
+
+# --- CORS Middleware Configuration ---
+# Allow web app to connect from localhost:5173 (Vite dev server)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",  # Vite dev server
+        "http://127.0.0.1:5173",  # Alternative localhost
+        "http://localhost:5174",  # Vite dev server (alt port)
+        "http://127.0.0.1:5174",  # Alternative localhost (alt port)
+        "http://localhost:3000",  # Alternative port
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all HTTP methods
+    allow_headers=["*"],  # Allow all headers
 )
 
 # --- App Startup Event ---
@@ -114,6 +132,33 @@ class FreeSlot(BaseModel):
     start: str
     end: str
     duration_minutes: int
+
+class ActivityResponse(BaseModel):
+    id: int
+    name: str
+    duration_minutes: int
+    aligned_values: List[str]
+    description: str
+    category: str
+    emoji: str
+
+class RecommendationRequest(BaseModel):
+    value_names: List[str]
+    min_duration: int = 0
+
+class RecommendationResponse(BaseModel):
+    id: int
+    name: str
+    duration_minutes: int
+    aligned_values: List[str]
+    description: str
+    category: str
+    emoji: str
+    matching_values: List[str]
+    match_score: int
+    predicted_fulfillment: float | None = None
+    suggested_slot: FreeSlot
+    all_available_slots: List[FreeSlot]
 
 # --- API Endpoints for Core Values ---
 
@@ -337,3 +382,110 @@ async def add_calendar_event(event: CalendarEvent):
         "start": created_event['start'].get('dateTime'),
         "end": created_event['end'].get('dateTime')
     }
+
+# --- API Endpoints for Activity Recommendations ---
+
+@app.get("/recommendations/activities", response_model=List[ActivityResponse])
+async def get_all_activities_endpoint():
+    """Fetches all available activities from the activity database."""
+    activities = recommendations.get_all_activities()
+    return activities
+
+@app.post("/recommendations/suggest", response_model=List[RecommendationResponse])
+@app.post("/recommendations/suggest", response_model=List[RecommendationResponse])
+async def get_activity_recommendations(request: RecommendationRequest):
+    """
+    Generates personalized activity recommendations based on user values and free time.
+    Uses ML predictor to adaptively score activities.
+    """
+    # Context for prediction (optional in request, defaulting for now)
+    # Ideally should come from request if we want real-time adaptation
+    context = {
+        "energy_level": 5, # Default or fetch from recent user state
+        "mood_before": 5
+    }
+    
+    recommendations_list = recommendations.get_recommendations(
+        value_names=request.value_names,
+        min_duration=request.min_duration,
+        predictor=predictor,
+        context=context
+    )
+    return recommendations_list
+
+# --- API Endpoints for History & Retraining ---
+
+class TaskUpdate(BaseModel):
+    mood_after: int | None = None
+    fulfillment_score: int | None = None
+    aligned_value: str | None = None
+
+@app.patch("/tasks/{task_id}", status_code=200)
+async def update_task(task_id: int, updates: TaskUpdate):
+    """Updates a task's details."""
+    update_dict = updates.model_dump(exclude_unset=True)
+    data_manager.update_task_details(task_id, update_dict)
+    return {"message": "Task updated successfully"}
+
+@app.post("/predict/retrain", status_code=200)
+async def retrain_model():
+    """Triggers a manual retraining of the ML model."""
+    predictor.train()
+    return {"message": "Model retraining triggered", "is_trained": predictor.is_trained}
+
+# --- API Endpoints for Configuration ---
+
+
+# --- API Endpoints for Configuration ---
+
+class ConfigRequest(BaseModel):
+    api_key: str
+
+@app.get("/config/status")
+async def get_config_status():
+    """Checks if the API key is configured."""
+    import os
+    from dotenv import load_dotenv
+    
+    # Reload env to be sure
+    load_dotenv(override=True)
+    
+    api_key = os.getenv("GEMINI_API_KEY")
+    return {"is_configured": bool(api_key), "key_preview": api_key[:4] + "..." if api_key else None}
+
+@app.post("/config/api-key")
+async def set_api_key(config: ConfigRequest):
+    """Sets the API key in the .env file and environment."""
+    import os
+    from dotenv import load_dotenv
+    
+    if not config.api_key.startswith("AIza"):
+        # Basic validation for Google API keys
+        raise HTTPException(status_code=400, detail="Invalid API Key format. Should start with 'AIza'.")
+
+    # 1. Update current environment
+    os.environ["GEMINI_API_KEY"] = config.api_key
+    
+    # 2. Persist to .env file
+    env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+    
+    # Read existing lines
+    lines = []
+    if os.path.exists(env_path):
+        with open(env_path, "r") as f:
+            lines = f.readlines()
+            
+    # Filter out existing key
+    lines = [line for line in lines if not line.strip().startswith("GEMINI_API_KEY=")]
+    
+    # Add new key
+    lines.append(f"GEMINI_API_KEY={config.api_key}\n")
+    
+    with open(env_path, "w") as f:
+        f.writelines(lines)
+        
+    # Reload specific modules that rely on it
+    import google.generativeai as genai
+    genai.configure(api_key=config.api_key)
+    
+    return {"status": "success", "message": "API Key updated successfully"}

@@ -181,12 +181,44 @@ def update_task_with_feedback(task_id, mood_after, fulfillment_score):
     print(f"Marked task ID {task_id} as done at {completion_time}.")
 
 
-def get_training_data():
-    """Fetches all tasks suitable for training (i.e., with a 'did_it' outcome).
-    For now, this is the same as get_all_tasks, but this could be filtered later."""
-    conn = sqlite3.connect(config.DB_PATH)
-    # For a robust model, we'd only select tasks where did_it is 1 or 0 and the day has passed.
-    # For now, we'll use all data to ensure we have enough to train.
-    df = pd.read_sql_query("SELECT * FROM tasks", conn)
-    conn.close()
     return df
+
+
+def update_task_details(task_id, updates):
+    """
+    Updates arbitrary fields for a task.
+    Args:
+        task_id (int): The ID of the task to update.
+        updates (dict): A dictionary of field_name: new_value.
+    """
+    # Security: Allow specific fields only to prevent SQL injection or schema breakage
+    allowed_fields = [
+        'task', 'task_type', 'aligned_value', 'dread_level', 
+        'mood_after', 'fulfillment_score', 'energy_level', 'mood_before'
+    ]
+    
+    # Filter updates to only include allowed fields
+    filtered_updates = {k: v for k, v in updates.items() if k in allowed_fields}
+    
+    if not filtered_updates:
+        print("No valid fields to update.")
+        return
+
+    conn = sqlite3.connect(config.DB_PATH)
+    cursor = conn.cursor()
+    
+    # Construct the SET clause dynamically: "field1 = ?, field2 = ?"
+    set_clause = ", ".join([f"{k} = ?" for k in filtered_updates.keys()])
+    
+    # Prepare values
+    values = list(filtered_updates.values())
+    values.append(task_id) # Add task_id for the WHERE clause
+    
+    try:
+        cursor.execute(f"UPDATE tasks SET {set_clause} WHERE id = ?", values)
+        conn.commit()
+        print(f"Updated task {task_id} with {filtered_updates}")
+    except Exception as e:
+        print(f"Error updating task: {e}")
+    finally:
+        conn.close()
